@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Face Register</title>
+
+<script src="face-api.min.js"></script>
+
+
+
+<style>
+body{
+  text-align:center;
+  background:#0f172a;
+  color:white;
+  font-family:Poppins;
+}
+
+video{
+  width:320px;
+  border:2px solid lime;
+  border-radius:10px;
+}
+</style>
+</head>
+
+<body>
+
+<h2>Face Register</h2>
+
+<video id="video" autoplay muted></video><br><br>
+<input id="name" placeholder="Enter name">
+
+<script>
+const video = document.getElementById("video");
+let saved = false;
+
+// ✅ Load models
+Promise.all([
+  faceapi.nets.tinyFaceDetector.loadFromUri('models'),
+  faceapi.nets.faceLandmark68Net.loadFromUri('models'),
+  faceapi.nets.faceRecognitionNet.loadFromUri('models')
+]).then(startCamera);
+
+// ✅ Start camera
+function startCamera(){
+
+  navigator.mediaDevices.getUserMedia({ video:true })
+  .then(stream=>{
+    video.srcObject = stream;
+  })
+  .catch(err=>{
+    alert("Camera Error: " + err);
+    console.log(err);
+  });
+}
+
+// ✅ Face detection
+video.addEventListener("play",()=>{
+
+  setInterval(async()=>{
+
+    const detections = await faceapi.detectAllFaces(
+      video,
+      new faceapi.TinyFaceDetectorOptions()
+    ).withFaceLandmarks().withFaceDescriptors();
+
+    if(detections.length > 0){
+
+      let name = document.getElementById("name").value;
+
+      if(name && !saved){
+
+        saved = true;
+
+        fetch("save_face.php",{
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({
+            name:name,
+            descriptor:Array.from(detections[0].descriptor)
+          })
+        });
+
+        alert("✅ Face Registered: " + name);
+      }
+
+    }
+
+  },2000);
+
+});
+</script>
+
+</body>
+</html>

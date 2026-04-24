@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>AI Face Scan</title>
+
+  <!-- ✅ Load face-api -->
+  <script src="face-api.min.js"></script>
+
+  <style>
+    body {
+      text-align: center;
+      background: linear-gradient(135deg, #0f172a, #1e293b);
+      color: white;
+      font-family: Poppins;
+    }
+
+    video {
+      width: 320px;
+      border-radius: 15px;
+      border: 2px solid #22c55e;
+    }
+
+    /* NAME DISPLAY */
+    #nameBox {
+      margin-top: 15px;
+      font-size: 22px;
+      font-weight: bold;
+      color: #22c55e;
+      transition: 0.3s;
+    }
+
+    /* SUCCESS ANIMATION */
+    #success {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0);
+      font-size: 80px;
+      color: #22c55e;
+      transition: 0.4s;
+    }
+
+    #success.show {
+      transform: translate(-50%, -50%) scale(1);
+    }
+  </style>
+</head>
+
+<body>
+
+  <h2>
+    AI Face Attendance</h2>
+
+  <video id="video" autoplay muted></video>
+  <div id="nameBox">Scanning...</div>
+  <div id="success">✔</div>
+  <script>
+const video = document.getElementById("video");
+let faceMatcher;
+let marked = {};
+
+// ✅ Load models
+async function loadModels() {
+  await faceapi.nets.tinyFaceDetector.loadFromUri('models');
+  await faceapi.nets.faceLandmark68Net.loadFromUri('models');
+  await faceapi.nets.faceRecognitionNet.loadFromUri('models');
+  console.log("✅ Models loaded");
+}
+
+// ✅ Load faces
+async function loadFaces() {
+  let res = await fetch("get_faces.php");
+  let data = await res.json();
+
+  console.log("📦 Faces from DB:", data);
+
+  return data.map(d => {
+    return new faceapi.LabeledFaceDescriptors(
+      d.name,
+      [new Float32Array(JSON.parse(d.descriptor))]
+    );
+  });
+}
+
+// ✅ Start system
+async function start() {
+  await loadModels();
+  const labeled = await loadFaces();
+
+  faceMatcher = new faceapi.FaceMatcher(labeled, 0.6);
+
+  navigator.mediaDevices.getUserMedia({ video: true })
+    .then(stream => video.srcObject = stream)
+    .catch(err => alert("Camera Error: " + err));
+}
+
+// ✅ When video starts
+video.addEventListener("play", () => {
+
+  const canvas = faceapi.createCanvasFromMedia(video);
+  document.body.append(canvas);
+
+  const displaySize = { width: 320, height: 240 };
+  faceapi.matchDimensions(canvas, displaySize);
+
+  setInterval(async () => {
+
+    const detections = await faceapi.detectAllFaces(
+      video,
+      new faceapi.TinyFaceDetectorOptions()
+    ).withFaceLandmarks().withFaceDescriptors();
+
+    const resized = faceapi.resizeResults(detections, displaySize);
+
+    canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
+
+    faceapi.draw.drawDetections(canvas, resized);
+    faceapi.draw.drawFaceLandmarks(canvas, resized);
+
+    if(resized.length === 0){
+      document.getElementById("nameBox").innerText = "😐 No face detected";
+      return;
+    }
+
+    resized.forEach(d => {
+
+      let match = faceMatcher.findBestMatch(d.descriptor);
+
+      console.log("🎯 Match:", match.toString());
+
+      if (match.label !== "unknown") {
+
+        // 🔥 SHOW NAME
+        document.getElementById("nameBox").innerText = "👤 " + match.label;
+
+        if (!marked[match.label]) {
+
+          marked[match.label] = true;
+
+          fetch("face_attendance.php", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: match.label,
+              subject: "AI"
+            })
+          });
+
+          // ✅ SUCCESS ANIMATION
+          let s = document.getElementById("success");
+          s.classList.add("show");
+
+          setTimeout(() => {
+            s.classList.remove("show");
+          }, 1500);
+
+          console.log("✅ Attendance Marked:", match.label);
+        }
+
+      } else {
+        document.getElementById("nameBox").innerText = "❌ Unknown Face";
+      }
+
+    });
+
+  }, 2000);
+
+});
+
+// ✅ Start everything
+start();
+</script>
+
+</body>
+
+</html>
